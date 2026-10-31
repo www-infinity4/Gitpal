@@ -38,6 +38,27 @@ export function responseText(data) {
   if (Array.isArray(value)) value = value.map(item => item?.text || item?.content || '').join('\n');
   return typeof value === 'string' ? value.trim().slice(0,12000) : '';
 }
+export function prEvidencePrompt({repository,prNumber,request='',details={}}) {
+  if(!validRepository(repository)||!Number.isSafeInteger(prNumber)||prNumber<1)throw Error('Invalid PR selection.');
+  const files=Array.isArray(details.files)?details.files.slice(0,25):[];
+  const messages=Array.isArray(details.messages)?details.messages.slice(-15):[];
+  const fileNotes=files.map(f=>{
+    const name=String(f.path||'').slice(0,220);
+    const patch=String(f.patch||'').slice(0,850);
+    return 'File: '+name+' ('+String(f.status||'changed').slice(0,30)+', +'+(Number(f.additions)||0)+' -'+(Number(f.deletions)||0)+')\\n'+patch;
+  });
+  const comments=messages.map(m=>'Comment by '+String(m.author||'unknown').slice(0,80)+': '+String(m.body||'').slice(0,1000));
+  return [
+    'You are Oracle Octaves Story Writer AI acting as a software completion reviewer, not an autonomous committer.',
+    'Review GitHub Copilot output against the exact user request and available PR evidence; identify omitted tasks, incomplete Cloudflare wiring, disabled controls, missing tests, and release blockers.',
+    'Be precise about gaps that cannot be established from these partial patches or PR comments. Never claim merge, deploy, credentials, or test execution without receipts.',
+    'Suggest a small ordered repair plan and user-approvable next instructions for Copilot. Do not output or request secrets.',
+    'Repository: '+repository+' PR #'+prNumber,
+    'User request: '+String(request||'').slice(0,2600),
+    'Changed files (partial patches):\\n'+fileNotes.join('\\n\\n'),
+    'Recent PR comments:\\n'+comments.join('\\n')
+  ].join('\\n\\n').slice(0,13500);
+}
 function likelyCredential(value) {
   return /\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{15,}|sk-[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._-]{20,})\b/.test(value);
 }
@@ -100,8 +121,8 @@ function app(){
   async function connect(){
     if(state.busy)return;
     if(!await readyClient()){
-      window.open('https://quantaphi.org/bubbles-accounts.html','_blank','noopener,noreferrer');
-      status('Opened first-party account connections. This Pages preview cannot share cookies or tokens across origins.');
+      window.location.assign('https://quantaphi.org/gitpal/');
+      status('Opening the first-party Gitpal studio to use verified GitHub sign-in.');
       return;
     }
     state.busy=true;$('sign-in').disabled=true;
@@ -195,6 +216,33 @@ function app(){
           }catch(e){status('Could not inspect PR: '+String(e.message||e).slice(0,150));}
           finally{inspect.disabled=false;}
         });actions.append(inspect);
+        const oracle=el('button','Oracle AI · inspect missing work','button gold');oracle.type='button';
+        oracle.addEventListener('click',async()=>{
+          if(state.busy)return;
+          if(!window.confirm('Send short excerpts from PR #'+pr.number+' changed files and comments to QuantaPhi Story Writer AI for analysis? This can include private repository content. Nothing is merged or published.'))return;
+          state.busy=true;oracle.disabled=true;
+          status('Reading actual Copilot PR changes before asking Oracle…');
+          try{
+            const details=await call('/github/copilot',{id:state.account.id,repository:repo.name,action:'details',prNumber:pr.number});
+            const input=prEvidencePrompt({repository:repo.name,prNumber:pr.number,request:$('request').value,details});
+            if(likelyCredential(input)||/-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:api[_-]?key|client[_-]?secret|password)\\s*[=:]\\s*['"]?[A-Za-z0-9_-]{14,}/i.test(input))
+              throw Error('Potential secret in PR evidence. Remove it from the source before requesting AI review.');
+            const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),65000);
+            let response;
+            try{response=await fetch(STORY_WRITER_AI,{method:'POST',headers:{'content-type':'application/json',accept:'application/json'},
+              body:JSON.stringify({input,context:{application:'QuantaPhi',task:'gitpal-copilot-gap-review',requireCloudflare:true}}),signal:controller.signal});}
+            finally{clearTimeout(timeout);}
+            const data=await response.json().catch(()=>({}));
+            if(!response.ok||data.ok===false)throw Error(String(data.error||'Story Writer service unavailable'));
+            const answer=responseText(data);
+            if(answer.length<25)throw Error('Oracle returned no usable review.');
+            state.ai=answer;$('ai-output').textContent=answer;$('ai-panel').hidden=false;
+            $('ai-panel').scrollIntoView({block:'nearest',behavior:'smooth'});
+            status('Oracle identified proposed gaps using available PR evidence. Add its plan to the request or send a specific correction; no files were changed.');
+          }catch(e){status('Oracle PR review unavailable: '+String(e.message||e).slice(0,180));}
+          finally{state.busy=false;oracle.disabled=false;}
+        });
+        actions.append(oracle);
         if(repo.permissions?.write){
           const input=el('textarea');input.className='control';input.rows=2;input.maxLength=4000;input.placeholder='Tell Copilot what to fix on this PR…';
           input.setAttribute('aria-label','Instructions for PR '+pr.number);
