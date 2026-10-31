@@ -40,7 +40,7 @@ test('Oracle PR review is based on bounded real evidence, not invented results',
   const input=prEvidencePrompt({repository:'www-infinity4/Gitpal',prNumber:12,
     request:'Finish Cloudflare connection',details:{files:[{path:'src/bridge.js',status:'modified',patch:'@@ + tested handler',additions:6,deletions:2}],messages:[{author:'copilot',body:'Waiting for deployment configuration'}]}});
   assert.match(input,/Gitpal PR #12/);
-  assert.match(input,/src\\/bridge.js/);
+  assert.match(input,/src\/bridge\.js/);
   assert.match(input,/Waiting for deployment configuration/);
   assert.match(input,/Do not output or request secrets/);
   assert.ok(input.length<=13500);
