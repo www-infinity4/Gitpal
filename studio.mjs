@@ -53,12 +53,13 @@ function app(){
     catch { status('This browser cannot retain the draft. Copy it before navigating away.'); }
   };
   const renderRepos = () => {
-    const select = $('repository'); select.replaceChildren();
+    const select = $('repository'), previous = select.value; select.replaceChildren();
     const blank=el('option','Choose an authorized GitHub repository');blank.value='';select.append(blank);
     for(const item of state.repositories){
       const opt=el('option',item.name+(item.permissions?.write?'':' · read only'));
       opt.value=item.name;select.append(opt);
     }
+    if (state.repositories.some(item => item.name === previous)) select.value = previous;
     $('send-build').disabled=!state.account || !state.repositories.some(r=>r.permissions?.write);
     $('refresh-prs').disabled=!state.account;
   };
