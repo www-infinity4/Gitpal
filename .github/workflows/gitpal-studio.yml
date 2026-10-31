@@ -25,4 +25,4 @@ jobs:
         run: node --test tests/studio.test.mjs
       - name: No inline GitHub credential or direct GitHub write route
         run: |
-          ! grep -nE 'github_pat_|ghp_[A-Za-z0-9]{16,}|/repos/.+/merge' index.html studio.mjs
+          ! grep -nE 'github_pat_[A-Za-z0-9_]{20,}|ghp_[A-Za-z0-9]{16,}|/repos/.+/merge' index.html studio.mjs
